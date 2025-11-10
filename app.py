@@ -7,9 +7,10 @@ License: MIT
 """
 
 import logging
+import random
 import sys
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Tuple
 
 import gradio as gr
 import numpy as np
@@ -20,6 +21,10 @@ matplotlib.use('Agg')  # Non-interactive backend for server deployment
 import matplotlib.pyplot as plt
 from PIL import Image
 import io
+try:
+    from gradio_client import utils as gradio_client_utils
+except ImportError:
+    gradio_client_utils = None
 try:
     from gradio_client import utils as gradio_client_utils
 except ImportError:
@@ -66,6 +71,78 @@ MIN_IMAGES = 1
 MAX_IMAGES = 16
 MIN_TEMPERATURE = 0.5
 MAX_TEMPERATURE = 2.0
+HERO_TEXT = """
+<h1 style="margin-bottom:0.3rem;">MNIST Digit Generator</h1>
+<p style="font-size:1.05rem;margin:0;color:var(--body-text-color);">
+Explore a trained GAN that synthesizes handwriting on demand. Set your parameters, tap generate, and download a fresh grid of digits.
+</p>
+"""
+
+CUSTOM_CSS = """
+#hero h1 {
+  font-size: 2.2rem;
+  font-weight: 700;
+}
+.surface {
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 14px;
+  padding: 1.2rem;
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.08);
+}
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+}
+.metric-card {
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, rgba(59,130,246,0.12), rgba(147,197,253,0.1));
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+.metric-card h4 {
+  margin: 0;
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #2563EB;
+}
+.metric-card p {
+  margin: 0.15rem 0 0 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+.pill-row > button {
+  flex: 1;
+}
+.tip-text {
+  font-size: 0.92rem;
+  color: var(--body-text-color-subdued);
+}
+"""
+
+# Patch gradio_client schema helpers to handle boolean schemas (older versions crash)
+if gradio_client_utils is not None:
+    try:
+        _original_get_type = gradio_client_utils.get_type
+        _original_schema_converter = gradio_client_utils._json_schema_to_python_type  # noqa: SLF001
+
+        def _safe_get_type(schema):
+            if isinstance(schema, bool):
+                return "bool" if schema else "none"
+            return _original_get_type(schema)
+
+        def _safe_schema_converter(schema, defs=None):
+            if isinstance(schema, bool):
+                return "Any" if schema else "None"
+            return _original_schema_converter(schema, defs)
+
+        gradio_client_utils.get_type = _safe_get_type
+        gradio_client_utils._json_schema_to_python_type = _safe_schema_converter  # noqa: SLF001
+        logger.info("Patched gradio_client utils to handle boolean JSON schemas")
+    except Exception as patch_error:
+        logger.warning("Could not patch gradio_client schema helpers: %s", patch_error)
 
 
 class Generator(nn.Module):
@@ -370,44 +447,52 @@ def generate_digits(
         return error_img
 
 
+def _random_seed() -> int:
+    """Return a random seed for the shuffle button."""
+    return random.randint(0, 10000)
+
+
 def create_interface() -> gr.Blocks:
     """Create and configure the Gradio interface."""
     
+    theme = gr.themes.Soft(
+        primary_hue="indigo",
+        secondary_hue="cyan",
+        neutral_hue="slate"
+    )
+    
     with gr.Blocks(
         title="MNIST GAN Digit Generator",
-        theme=gr.themes.Soft(),
-        css=".gradio-container {max-width: 1200px !important}"
+        theme=theme,
+        css=CUSTOM_CSS
     ) as interface:
         
-        # Header
-        gr.Markdown(
-            """
-            # MNIST Digit Generator
-            ## Generative Adversarial Network for Handwritten Digit Synthesis
-            
-            This application demonstrates a trained Generative Adversarial Network (GAN) that synthesizes 
-            realistic handwritten digits from random noise vectors. The model was trained on the MNIST 
-            dataset for 200 epochs and achieves high-quality, diverse digit generation.
-            """
-        )
+        gr.Markdown(HERO_TEXT, elem_id="hero")
         
-        # Model status
-        model_status = model_manager.model_info if model_manager else "Error: Model failed to load. Check logs for details."
-        gr.Markdown(f"**Model Status:** {model_status}")
+        with gr.Row(elem_classes="metric-grid"):
+            for label, value in [
+                ("Noise Dim", f"{NOISE_DIM}"),
+                ("Hidden Units", f"{HIDDEN_DIM}"),
+                ("Epochs", "200"),
+                ("Temp Range", f"{MIN_TEMPERATURE} – {MAX_TEMPERATURE}"),
+            ]:
+                gr.Markdown(
+                    f"<div class='metric-card'><h4>{label}</h4><p>{value}</p></div>"
+                )
         
-        # Main interface
-        with gr.Row():
-            # Controls column
-            with gr.Column(scale=1):
-                gr.Markdown("### Generation Parameters")
+        model_status = model_manager.model_info if model_manager else "Model unavailable"
+        
+        with gr.Row(equal_height=True):
+            with gr.Column(scale=1, elem_classes="surface"):
+                gr.Markdown("### Controls")
                 
                 num_images = gr.Slider(
                     minimum=MIN_IMAGES,
                     maximum=MAX_IMAGES,
                     value=9,
                     step=1,
-                    label="Number of Samples",
-                    info=f"Generate {MIN_IMAGES}-{MAX_IMAGES} digit samples"
+                    label="Samples",
+                    info=f"Generate {MIN_IMAGES}-{MAX_IMAGES} digits"
                 )
                 
                 seed = gr.Slider(
@@ -415,8 +500,8 @@ def create_interface() -> gr.Blocks:
                     maximum=10000,
                     value=DEFAULT_SEED,
                     step=1,
-                    label="Random Seed",
-                    info="Set seed for reproducible generation"
+                    label="Seed",
+                    info="Same seed → same grid"
                 )
                 
                 temperature = gr.Slider(
@@ -425,31 +510,39 @@ def create_interface() -> gr.Blocks:
                     value=1.0,
                     step=0.1,
                     label="Temperature",
-                    info="Controls output diversity (higher = more diverse)"
+                    info="Higher = wilder digits"
                 )
                 
-                generate_btn = gr.Button(
-                    "Generate Digits",
-                    variant="primary",
-                    size="lg"
-                )
+                with gr.Row(elem_classes="pill-row"):
+                    random_btn = gr.Button("Shuffle Seed", variant="secondary")
+                    generate_btn = gr.Button("Generate", variant="primary")
             
-            # Output column
-            with gr.Column(scale=2):
+            with gr.Column(scale=2, elem_classes="surface"):
+                gr.Markdown("### Output")
                 output_image = gr.Image(
-                    label="Generated Digits",
+                    label="",
                     type="pil",
-                    height=400
+                    height=430,
+                    show_download_button=True,
+                    interactive=False
+                )
+                gr.Markdown(
+                    f"**Model status:** {model_status}",
+                    elem_classes="tip-text"
+                )
+                gr.Markdown(
+                    "Pro tip: Lower temperatures focus on clean digits, while higher values explore creative shapes.",
+                    elem_classes="tip-text"
                 )
         
-        # Example configurations
-        gr.Markdown("### Example Configurations")
+        gr.Markdown("### Quick Presets")
         gr.Examples(
+            label="Pick a vibe",
             examples=[
-                [4, 42, 1.0],
-                [9, 123, 1.0],
-                [16, 777, 0.8],
-                [6, 999, 1.5],
+                [4, 21, 0.9],
+                [9, 512, 1.0],
+                [12, 777, 1.3],
+                [16, 999, 0.7],
             ],
             inputs=[num_images, seed, temperature],
             outputs=output_image,
@@ -457,56 +550,27 @@ def create_interface() -> gr.Blocks:
             cache_examples=True
         )
         
-        # Technical details (collapsible)
-        with gr.Accordion("Model Architecture & Performance", open=False):
+        with gr.Accordion("What powers this demo?", open=False):
             gr.Markdown(
                 """
-                ### Generator Network
-                - **Input:** 100-dimensional random noise vector (sampled from N(0,1))
-                - **Architecture:** Fully connected network with 4 layers
-                  - Layer 1: 100 → 256 (LeakyReLU, BatchNorm)
-                  - Layer 2: 256 → 512 (LeakyReLU, BatchNorm)
-                  - Layer 3: 512 → 1024 (LeakyReLU, BatchNorm)
-                  - Output: 1024 → 784 (Tanh)
-                - **Output:** 28×28 grayscale image
-                - **Parameters:** 1,489,936 trainable parameters
-                
-                ### Training Configuration
-                - **Dataset:** MNIST (60,000 training samples)
-                - **Duration:** 200 epochs
-                - **Optimizer:** Adam (lr=0.0002, β₁=0.5)
-                - **Loss:** Binary Cross-Entropy
-                - **Final Generator Loss:** 0.972
-                - **Final Discriminator Loss:** 1.213
-                
-                ### Model Performance
-                - Stable convergence with no mode collapse
-                - Generates diverse, realistic handwritten digits
-                - Trained on CPU (approximately 2-3 hours)
+                - **Generator:** Fully-connected GAN with 1.49M parameters (100-dim noise → 28×28 image).
+                - **Training:** MNIST, 200 epochs, Adam (lr=2e-4), final generator loss ≈ 0.97.
+                - **Deployment:** PyTorch 2.0.1 + Gradio 4.44 running on CPU in Hugging Face Spaces.
                 """
             )
         
-        # Footer
-        gr.Markdown(
-            """
-            ---
-            **Technology Stack:** PyTorch 2.0.1 | Gradio 4.44.0 | Python 3.9+
-            
-            **Project Resources:** 
-            - Training Notebook: `GAN_MNIST_Assignment.ipynb`
-            - Model Weights: `generator_model.pth`
-            - GitHub: [View Repository](https://github.com/vikranth1000/mnist-gan)
-            """
+        random_btn.click(
+            fn=_random_seed,
+            outputs=seed,
+            queue=False
         )
         
-        # Event handlers
         generate_btn.click(
             fn=generate_digits,
             inputs=[num_images, seed, temperature],
             outputs=output_image
         )
         
-        # Auto-generate on load
         interface.load(
             fn=generate_digits,
             inputs=[
