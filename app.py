@@ -81,6 +81,11 @@ METRIC_CARDS = [
     ("Generator Loss", "0.981", "Final epoch"),
     ("Params", "1.49M", "Trainable weights"),
 ]
+STYLE_PRESETS = [
+    ("Precise", "Clean, focused digits", 6, 123, 0.8),
+    ("Balanced", "Default training vibe", 9, 512, 1.0),
+    ("Playful", "Add variety + contrast", 12, 777, 1.3),
+]
 
 CUSTOM_CSS = """
 .gradio-container {
@@ -150,6 +155,22 @@ CUSTOM_CSS = """
 }
 .gr-box {
   background: rgba(15, 23, 42, 0.8) !important;
+}
+.style-chip {
+  border-radius: 999px;
+  border: 1px solid rgba(59,130,246,0.5);
+  padding: 0.65rem 1rem;
+  background: rgba(30,64,175,0.15);
+  color: #E0E7FF;
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.style-chip span {
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: rgba(226,232,240,0.8);
 }
 """
 
@@ -461,6 +482,24 @@ def _random_seed() -> int:
     return random.randint(0, 10000)
 
 
+def _preset_values(num_images: int, seed: int, temperature: float) -> Tuple[int, int, float]:
+    """Return preset tuple for slider updates."""
+    return num_images, seed, temperature
+
+
+def generate_comparison(
+    num_images: int,
+    seed_left: int,
+    temperature_left: float,
+    seed_right: int,
+    temperature_right: float
+) -> Tuple[Image.Image, Image.Image]:
+    """Generate two grids for side-by-side comparison."""
+    left = generate_digits(num_images, seed_left, temperature_left)
+    right = generate_digits(num_images, seed_right, temperature_right)
+    return left, right
+
+
 def create_interface() -> gr.Blocks:
     """Create and configure the Gradio interface."""
     
@@ -492,74 +531,138 @@ def create_interface() -> gr.Blocks:
         
         model_status = model_manager.model_info if model_manager else "Model unavailable"
         
-        with gr.Row(equal_height=True):
-            with gr.Column(scale=1, elem_classes="surface"):
-                gr.Markdown("### Controls")
+        with gr.Tabs():
+            with gr.Tab("Playground"):
+                with gr.Row(equal_height=True):
+                    with gr.Column(scale=1, elem_classes="surface"):
+                        gr.Markdown("### Controls")
+                        
+                        num_images = gr.Slider(
+                            minimum=MIN_IMAGES,
+                            maximum=MAX_IMAGES,
+                            value=9,
+                            step=1,
+                            label="Samples",
+                            info=f"Generate {MIN_IMAGES}-{MAX_IMAGES} digits"
+                        )
+                        
+                        seed = gr.Slider(
+                            minimum=0,
+                            maximum=10000,
+                            value=DEFAULT_SEED,
+                            step=1,
+                            label="Seed",
+                            info="Same seed → same grid"
+                        )
+                        
+                        temperature = gr.Slider(
+                            minimum=MIN_TEMPERATURE,
+                            maximum=MAX_TEMPERATURE,
+                            value=1.0,
+                            step=0.1,
+                            label="Temperature",
+                            info="Higher = wilder digits"
+                        )
+                        
+                        gr.Markdown("#### Style presets")
+                        with gr.Row():
+                            preset_buttons = []
+                            for label, desc, n_val, seed_val, temp_val in STYLE_PRESETS:
+                                btn = gr.Button(
+                                    f"{label} · {desc}",
+                                    elem_classes="style-chip",
+                                    variant="secondary"
+                                )
+                                btn.click(
+                                    fn=lambda n=n_val, s=seed_val, t=temp_val: _preset_values(n, s, t),
+                                    outputs=[num_images, seed, temperature],
+                                    queue=False
+                                )
+                                preset_buttons.append(btn)
+                        
+                        with gr.Row(elem_classes="pill-row"):
+                            random_btn = gr.Button("Shuffle Seed", variant="secondary")
+                            generate_btn = gr.Button("Generate", variant="primary")
+                    
+                    with gr.Column(scale=2, elem_classes="surface"):
+                        gr.Markdown("### Output")
+                        output_image = gr.Image(
+                            label="",
+                            type="pil",
+                            height=430,
+                            show_download_button=True,
+                            interactive=False
+                        )
+                        gr.Markdown(
+                            f"**Model status:** {model_status}",
+                            elem_classes="tip-text"
+                        )
+                        gr.Markdown(
+                            "Pro tip: Lower temperatures focus on clean digits, while higher values explore creative shapes.",
+                            elem_classes="tip-text"
+                        )
                 
-                num_images = gr.Slider(
-                    minimum=MIN_IMAGES,
-                    maximum=MAX_IMAGES,
-                    value=9,
-                    step=1,
-                    label="Samples",
-                    info=f"Generate {MIN_IMAGES}-{MAX_IMAGES} digits"
-                )
-                
-                seed = gr.Slider(
-                    minimum=0,
-                    maximum=10000,
-                    value=DEFAULT_SEED,
-                    step=1,
-                    label="Seed",
-                    info="Same seed → same grid"
-                )
-                
-                temperature = gr.Slider(
-                    minimum=MIN_TEMPERATURE,
-                    maximum=MAX_TEMPERATURE,
-                    value=1.0,
-                    step=0.1,
-                    label="Temperature",
-                    info="Higher = wilder digits"
-                )
-                
-                with gr.Row(elem_classes="pill-row"):
-                    random_btn = gr.Button("Shuffle Seed", variant="secondary")
-                    generate_btn = gr.Button("Generate", variant="primary")
+                with gr.Group(elem_classes="surface quick-presets"):
+                    gr.Markdown("### Quick Presets")
+                    gr.Examples(
+                        label="Pick a vibe",
+                        examples=[
+                            [4, 21, 0.9],
+                            [9, 512, 1.0],
+                            [12, 777, 1.3],
+                            [16, 999, 0.7],
+                        ],
+                        inputs=[num_images, seed, temperature],
+                        outputs=output_image,
+                        fn=generate_digits,
+                        cache_examples=True
+                    )
             
-            with gr.Column(scale=2, elem_classes="surface"):
-                gr.Markdown("### Output")
-                output_image = gr.Image(
-                    label="",
-                    type="pil",
-                    height=430,
-                    show_download_button=True,
-                    interactive=False
+            with gr.Tab("Compare"):
+                gr.Markdown("Explore two parameter sets side-by-side to understand how seeds and temperature shape samples.")
+                num_images_cmp = gr.Slider(
+                    minimum=MIN_IMAGES,
+                    maximum=12,
+                    value=6,
+                    step=1,
+                    label="Samples per grid"
+                )
+                with gr.Row(equal_height=True):
+                    with gr.Column(elem_classes="surface"):
+                        gr.Markdown("#### Left grid")
+                        seed_left = gr.Slider(0, 10000, 42, step=1, label="Seed")
+                        temp_left = gr.Slider(MIN_TEMPERATURE, MAX_TEMPERATURE, 0.9, step=0.1, label="Temperature")
+                    with gr.Column(elem_classes="surface"):
+                        gr.Markdown("#### Right grid")
+                        seed_right = gr.Slider(0, 10000, 777, step=1, label="Seed")
+                        temp_right = gr.Slider(MIN_TEMPERATURE, MAX_TEMPERATURE, 1.3, step=0.1, label="Temperature")
+                compare_btn = gr.Button("Generate Comparison", variant="primary")
+                with gr.Row():
+                    compare_left = gr.Image(type="pil", height=360, label="Left output", show_download_button=True)
+                    compare_right = gr.Image(type="pil", height=360, label="Right output", show_download_button=True)
+            
+            with gr.Tab("Insights"):
+                gr.Markdown(
+                    "Training insights highlight how the GAN converged. These snapshots come directly from the notebook used to build the weights."
+                )
+                gr.Image(
+                    value=str(Path("losses.png")),
+                    label="Training loss curves",
+                    show_download_button=True
+                )
+                gr.Markdown("**Key checkpoints**")
+                gr.Dataframe(
+                    value=[
+                        {"Metric": "Generator Loss", "Value": "0.981", "Notes": "Converged after steady decline"},
+                        {"Metric": "Discriminator Loss", "Value": "1.213", "Notes": "Balanced with generator"},
+                        {"Metric": "Best Epoch", "Value": "200", "Notes": "Used for deployment weights"},
+                    ],
+                    interactive=False,
+                    wrap=True
                 )
                 gr.Markdown(
-                    f"**Model status:** {model_status}",
-                    elem_classes="tip-text"
+                    "Want to dig deeper? Clone the repo and open `GAN_MNIST_Assignment.ipynb` to replay the full experiment."
                 )
-                gr.Markdown(
-                    "Pro tip: Lower temperatures focus on clean digits, while higher values explore creative shapes.",
-                    elem_classes="tip-text"
-                )
-        
-        with gr.Group(elem_classes="surface quick-presets"):
-            gr.Markdown("### Quick Presets")
-            gr.Examples(
-                label="Pick a vibe",
-                examples=[
-                    [4, 21, 0.9],
-                    [9, 512, 1.0],
-                    [12, 777, 1.3],
-                    [16, 999, 0.7],
-                ],
-                inputs=[num_images, seed, temperature],
-                outputs=output_image,
-                fn=generate_digits,
-                cache_examples=True
-            )
         
         with gr.Accordion("What powers this demo?", open=False):
             gr.Markdown(
@@ -580,6 +683,12 @@ def create_interface() -> gr.Blocks:
             fn=generate_digits,
             inputs=[num_images, seed, temperature],
             outputs=output_image
+        )
+        
+        compare_btn.click(
+            fn=generate_comparison,
+            inputs=[num_images_cmp, seed_left, temp_left, seed_right, temp_right],
+            outputs=[compare_left, compare_right]
         )
         
         interface.load(
