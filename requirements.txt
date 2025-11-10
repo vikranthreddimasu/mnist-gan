@@ -5,6 +5,9 @@ torchvision==0.15.2
 # Web Interface - Using stable Gradio 4.x version
 gradio==4.19.2
 
+# Hugging Face Hub - Pin to version with HfFolder
+huggingface_hub==0.19.4
+
 # Numerical Computing
 numpy==1.24.3
 
