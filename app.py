@@ -652,10 +652,11 @@ def create_interface() -> gr.Blocks:
                 )
                 gr.Markdown("**Key checkpoints**")
                 gr.Dataframe(
+                    headers=["Metric", "Value", "Notes"],
                     value=[
-                        {"Metric": "Generator Loss", "Value": "0.981", "Notes": "Converged after steady decline"},
-                        {"Metric": "Discriminator Loss", "Value": "1.213", "Notes": "Balanced with generator"},
-                        {"Metric": "Best Epoch", "Value": "200", "Notes": "Used for deployment weights"},
+                        ["Generator Loss", "0.981", "Converged after steady decline"],
+                        ["Discriminator Loss", "1.213", "Balanced with generator"],
+                        ["Best Epoch", "200", "Used for deployment weights"],
                     ],
                     interactive=False,
                     wrap=True
