@@ -104,11 +104,16 @@ class ModelManager:
         self.model_path = Path(model_path)
         
         # Auto-detect best available device (CUDA > MPS > CPU)
-        if torch.cuda.is_available():
-            self.device = torch.device('cuda')
-        elif torch.backends.mps.is_available():
-            self.device = torch.device('mps')
-        else:
+        # Use try-except for MPS check as it may not be available on all platforms
+        try:
+            if torch.cuda.is_available():
+                self.device = torch.device('cuda')
+            elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                self.device = torch.device('mps')
+            else:
+                self.device = torch.device('cpu')
+        except Exception:
+            # Fallback to CPU if device detection fails
             self.device = torch.device('cpu')
         
         self.generator = None
