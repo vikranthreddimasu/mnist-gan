@@ -73,41 +73,69 @@ HERO_TEXT = """
 Explore a trained GAN that synthesizes handwriting on demand. Set your parameters, tap generate, and download a fresh grid of digits.
 </p>
 """
+METRIC_CARDS = [
+    ("Noise Dim", f"{NOISE_DIM}", "Latent space size"),
+    ("Hidden Units", f"{HIDDEN_DIM}", "Per-layer width"),
+    ("Epochs", "200", "Training duration"),
+    ("Temp Range", f"{MIN_TEMPERATURE} – {MAX_TEMPERATURE}", "Diversity control"),
+    ("Generator Loss", "0.981", "Final epoch"),
+    ("Params", "1.49M", "Trainable weights"),
+]
 
 CUSTOM_CSS = """
+.gradio-container {
+  max-width: 1100px !important;
+  margin: auto;
+  background: radial-gradient(circle at top, #111827, #0b1120 45%, #05070f 90%);
+  color: #F8FAFC;
+}
+#hero {
+  padding: 0.5rem 0 1rem 0;
+}
 #hero h1 {
   font-size: 2.2rem;
   font-weight: 700;
+  color: #F8FAFC;
+}
+#hero p {
+  color: #CBD5F5;
 }
 .surface {
-  background: rgba(255, 255, 255, 0.8);
-  border: 1px solid rgba(0, 0, 0, 0.05);
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.2);
   border-radius: 14px;
   padding: 1.2rem;
-  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 18px 40px rgba(2, 6, 23, 0.6);
 }
 .metric-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 0.75rem;
+  margin-bottom: 0.5rem;
 }
 .metric-card {
   border-radius: 12px;
-  padding: 0.75rem 1rem;
-  background: linear-gradient(135deg, rgba(59,130,246,0.12), rgba(147,197,253,0.1));
-  border: 1px solid rgba(59, 130, 246, 0.2);
+  padding: 0.8rem 1rem;
+  background: linear-gradient(135deg, rgba(59,130,246,0.2), rgba(147,197,253,0.08));
+  border: 1px solid rgba(59, 130, 246, 0.25);
 }
-.metric-card h4 {
+.metric-label {
   margin: 0;
   font-size: 0.8rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: #2563EB;
 }
-.metric-card p {
+.metric-value {
   margin: 0.15rem 0 0 0;
   font-size: 1.2rem;
   font-weight: 600;
+  color: #F8FAFC;
+}
+.metric-hint {
+  margin: 0.1rem 0 0 0;
+  font-size: 0.8rem;
+  color: rgba(248, 250, 252, 0.75);
 }
 .pill-row > button {
   flex: 1;
@@ -115,6 +143,13 @@ CUSTOM_CSS = """
 .tip-text {
   font-size: 0.92rem;
   color: var(--body-text-color-subdued);
+  color: rgba(226, 232, 240, 0.9);
+}
+.quick-presets .table {
+  background: rgba(15, 23, 42, 0.65);
+}
+.gr-box {
+  background: rgba(15, 23, 42, 0.8) !important;
 }
 """
 
@@ -444,14 +479,15 @@ def create_interface() -> gr.Blocks:
         gr.Markdown(HERO_TEXT, elem_id="hero")
         
         with gr.Row(elem_classes="metric-grid"):
-            for label, value in [
-                ("Noise Dim", f"{NOISE_DIM}"),
-                ("Hidden Units", f"{HIDDEN_DIM}"),
-                ("Epochs", "200"),
-                ("Temp Range", f"{MIN_TEMPERATURE} – {MAX_TEMPERATURE}"),
-            ]:
-                gr.Markdown(
-                    f"<div class='metric-card'><h4>{label}</h4><p>{value}</p></div>"
+            for label, value, hint in METRIC_CARDS:
+                gr.HTML(
+                    f"""
+                    <div class='metric-card'>
+                        <div class='metric-label'>{label}</div>
+                        <div class='metric-value'>{value}</div>
+                        <div class='metric-hint'>{hint}</div>
+                    </div>
+                    """
                 )
         
         model_status = model_manager.model_info if model_manager else "Model unavailable"
@@ -509,20 +545,21 @@ def create_interface() -> gr.Blocks:
                     elem_classes="tip-text"
                 )
         
-        gr.Markdown("### Quick Presets")
-        gr.Examples(
-            label="Pick a vibe",
-            examples=[
-                [4, 21, 0.9],
-                [9, 512, 1.0],
-                [12, 777, 1.3],
-                [16, 999, 0.7],
-            ],
-            inputs=[num_images, seed, temperature],
-            outputs=output_image,
-            fn=generate_digits,
-            cache_examples=True
-        )
+        with gr.Group(elem_classes="surface quick-presets"):
+            gr.Markdown("### Quick Presets")
+            gr.Examples(
+                label="Pick a vibe",
+                examples=[
+                    [4, 21, 0.9],
+                    [9, 512, 1.0],
+                    [12, 777, 1.3],
+                    [16, 999, 0.7],
+                ],
+                inputs=[num_images, seed, temperature],
+                outputs=output_image,
+                fn=generate_digits,
+                cache_examples=True
+            )
         
         with gr.Accordion("What powers this demo?", open=False):
             gr.Markdown(
