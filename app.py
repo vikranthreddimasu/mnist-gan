@@ -81,11 +81,27 @@ METRIC_CARDS = [
     ("Generator Loss", "0.981", "Final epoch"),
     ("Params", "1.49M", "Trainable weights"),
 ]
-STYLE_PRESETS = [
-    ("Precise", "Clean, focused digits", 6, 123, 0.8),
-    ("Balanced", "Default training vibe", 9, 512, 1.0),
-    ("Playful", "Add variety + contrast", 12, 777, 1.3),
-]
+STYLE_PRESETS = {
+    "Precise": {
+        "description": "Clean, focused digits",
+        "samples": 6,
+        "seed": 123,
+        "temperature": 0.8,
+    },
+    "Balanced": {
+        "description": "Default training vibe",
+        "samples": 9,
+        "seed": 512,
+        "temperature": 1.0,
+    },
+    "Playful": {
+        "description": "Add variety & contrast",
+        "samples": 12,
+        "seed": 777,
+        "temperature": 1.3,
+    },
+}
+DEFAULT_STYLE = "Balanced"
 
 CUSTOM_CSS = """
 .gradio-container {
@@ -156,21 +172,16 @@ CUSTOM_CSS = """
 .gr-box {
   background: rgba(15, 23, 42, 0.8) !important;
 }
-.style-chip {
-  border-radius: 999px;
-  border: 1px solid rgba(59,130,246,0.5);
-  padding: 0.65rem 1rem;
-  background: rgba(30,64,175,0.15);
-  color: #E0E7FF;
-  font-weight: 600;
+.style-select .wrap {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 0.35rem;
 }
-.style-chip span {
-  font-size: 0.8rem;
-  font-weight: 400;
-  color: rgba(226,232,240,0.8);
+.style-select select {
+  background: rgba(30, 64, 175, 0.2);
+  border: 1px solid rgba(79, 70, 229, 0.6);
+  border-radius: 999px;
+  color: #E0E7FF;
 }
 """
 
@@ -482,9 +493,26 @@ def _random_seed() -> int:
     return random.randint(0, 10000)
 
 
-def _preset_values(num_images: int, seed: int, temperature: float) -> Tuple[int, int, float]:
-    """Return preset tuple for slider updates."""
-    return num_images, seed, temperature
+def _apply_style(name: str) -> Tuple[int, int, float, str]:
+    """Return slider updates for the selected style preset."""
+    preset = STYLE_PRESETS.get(name, STYLE_PRESETS[DEFAULT_STYLE])
+    note = f"Preset • {preset['description']}"
+    return preset["samples"], preset["seed"], preset["temperature"], note
+
+
+def _sync_seed(link_enabled: bool, seed_value: int):
+    """Mirror left seed to right when link is enabled."""
+    if link_enabled:
+        return gr.update(value=seed_value)
+    return gr.update()
+
+
+def _toggle_seed_input(link_enabled: bool, seed_value: int):
+    """Toggle right-seed interactivity when link checkbox changes."""
+    return gr.update(
+        value=seed_value if link_enabled else seed_value,
+        interactive=not link_enabled
+    )
 
 
 def generate_comparison(
@@ -535,12 +563,12 @@ def create_interface() -> gr.Blocks:
             with gr.Tab("Playground"):
                 with gr.Row(equal_height=True):
                     with gr.Column(scale=1, elem_classes="surface"):
-                        gr.Markdown("### Controls")
-                        
+                gr.Markdown("### Controls")
+                
                         num_images = gr.Slider(
                             minimum=MIN_IMAGES,
                             maximum=MAX_IMAGES,
-                            value=9,
+                            value=STYLE_PRESETS[DEFAULT_STYLE]["samples"],
                             step=1,
                             label="Samples",
                             info=f"Generate {MIN_IMAGES}-{MAX_IMAGES} digits"
@@ -549,7 +577,7 @@ def create_interface() -> gr.Blocks:
                         seed = gr.Slider(
                             minimum=0,
                             maximum=10000,
-                            value=DEFAULT_SEED,
+                            value=STYLE_PRESETS[DEFAULT_STYLE]["seed"],
                             step=1,
                             label="Seed",
                             info="Same seed → same grid"
@@ -566,19 +594,23 @@ def create_interface() -> gr.Blocks:
                         
                         gr.Markdown("#### Style presets")
                         with gr.Row():
-                            preset_buttons = []
-                            for label, desc, n_val, seed_val, temp_val in STYLE_PRESETS:
-                                btn = gr.Button(
-                                    f"{label} · {desc}",
-                                    elem_classes="style-chip",
-                                    variant="secondary"
-                                )
-                                btn.click(
-                                    fn=lambda n=n_val, s=seed_val, t=temp_val: _preset_values(n, s, t),
-                                    outputs=[num_images, seed, temperature],
-                                    queue=False
-                                )
-                                preset_buttons.append(btn)
+                            style_selector = gr.Dropdown(
+                                label="Choose a vibe",
+                                choices=list(STYLE_PRESETS.keys()),
+                                value=DEFAULT_STYLE,
+                                elem_classes="style-select",
+                                scale=1
+                            )
+                        preset_note = gr.Markdown(
+                            f"Preset • {STYLE_PRESETS[DEFAULT_STYLE]['description']}"
+                        )
+                        
+                        style_selector.change(
+                            fn=_apply_style,
+                            inputs=style_selector,
+                            outputs=[num_images, seed, temperature, preset_note],
+                            queue=False
+                        )
                         
                         with gr.Row(elem_classes="pill-row"):
                             random_btn = gr.Button("Shuffle Seed", variant="secondary")
@@ -634,8 +666,23 @@ def create_interface() -> gr.Blocks:
                         temp_left = gr.Slider(MIN_TEMPERATURE, MAX_TEMPERATURE, 0.9, step=0.1, label="Temperature")
                     with gr.Column(elem_classes="surface"):
                         gr.Markdown("#### Right grid")
-                        seed_right = gr.Slider(0, 10000, 777, step=1, label="Seed")
+                        seed_lock = gr.Checkbox(value=True, label="Mirror seed from left")
+                        seed_right = gr.Slider(
+                            0, 10000, 42, step=1, label="Seed", interactive=False
+                        )
                         temp_right = gr.Slider(MIN_TEMPERATURE, MAX_TEMPERATURE, 1.3, step=0.1, label="Temperature")
+                seed_left.change(
+                    fn=_sync_seed,
+                    inputs=[seed_lock, seed_left],
+                    outputs=seed_right,
+                    queue=False
+                )
+                seed_lock.change(
+                    fn=_toggle_seed_input,
+                    inputs=[seed_lock, seed_left],
+                    outputs=seed_right,
+                    queue=False
+                )
                 compare_btn = gr.Button("Generate Comparison", variant="primary")
                 with gr.Row():
                     compare_left = gr.Image(type="pil", height=360, label="Left output", show_download_button=True)
@@ -645,11 +692,17 @@ def create_interface() -> gr.Blocks:
                 gr.Markdown(
                     "Training insights highlight how the GAN converged. These snapshots come directly from the notebook used to build the weights."
                 )
-                gr.Image(
-                    value=str(Path("losses.png")),
-                    label="Training loss curves",
-                    show_download_button=True
-                )
+                loss_path = Path("losses.png")
+                if loss_path.exists():
+                    gr.Image(
+                        value=str(loss_path),
+                        type="filepath",
+                        height=280,
+                        label="Training loss curves",
+                        show_download_button=True
+                    )
+                else:
+                    gr.Markdown("⚠️ Loss plot not found in repository.")
                 gr.Markdown("**Key checkpoints**")
                 gr.Dataframe(
                     headers=["Metric", "Value", "Notes"],
