@@ -125,7 +125,11 @@ class ModelManager:
     def _load_model(self) -> None:
         """Load the trained generator model."""
         try:
-            logger.info(f"Loading model from {self.model_path}")
+            # Resolve absolute path for better debugging
+            abs_path = self.model_path.resolve()
+            logger.info(f"Loading model from {abs_path}")
+            logger.info(f"Current working directory: {Path.cwd()}")
+            logger.info(f"Model file exists: {self.model_path.exists()}")
             
             # Initialize generator
             self.generator = Generator(
@@ -133,16 +137,20 @@ class ModelManager:
                 hidden_dim=HIDDEN_DIM,
                 output_dim=OUTPUT_DIM
             ).to(self.device)
+            logger.info("Generator initialized successfully")
             
             # Load checkpoint if available
             if self.model_path.exists():
+                logger.info(f"Loading checkpoint from {abs_path}")
                 checkpoint = torch.load(
-                    self.model_path,
+                    str(self.model_path),  # Convert Path to string for torch.load
                     map_location=self.device,
                     weights_only=True
                 )
+                logger.info("Checkpoint loaded, extracting state dict...")
                 self.generator.load_state_dict(checkpoint['generator_state_dict'])
                 self.generator.eval()
+                logger.info("Model state dict loaded successfully")
                 
                 epochs = checkpoint.get('epoch', 'N/A')
                 g_loss = checkpoint.get('generator_loss', 'N/A')
@@ -154,14 +162,16 @@ class ModelManager:
                 )
                 logger.info(f"Model loaded successfully: {self.model_info}")
             else:
-                logger.warning(f"Model file not found at {self.model_path}. Using untrained model.")
-                self.model_info = "Warning: Model weights not found. Generate them by running Cell 26 in the notebook."
+                logger.warning(f"Model file not found at {abs_path}. Using untrained model.")
+                logger.warning(f"Files in current directory: {list(Path('.').glob('*.pth'))}")
+                self.model_info = "Warning: Model weights not found. Using untrained model."
                 self.generator.eval()
                 
         except Exception as e:
             logger.error(f"Error loading model: {str(e)}", exc_info=True)
             self.model_info = f"Error loading model: {str(e)}"
-            raise
+            # Don't raise - let the app start and show error in UI
+            logger.error("Model loading failed, but continuing to start app...")
     
     @torch.no_grad()
     def generate(
@@ -295,6 +305,9 @@ def generate_digits(
         PIL Image containing generated digits
     """
     try:
+        if model_manager is None:
+            raise RuntimeError("Model not loaded. Please check the logs for details.")
+        
         # Validate inputs
         num_images, seed, temperature = validate_inputs(num_images, seed, temperature)
         
@@ -353,7 +366,8 @@ def create_interface() -> gr.Blocks:
         )
         
         # Model status
-        gr.Markdown(f"**Model Status:** {model_manager.model_info}")
+        model_status = model_manager.model_info if model_manager else "Error: Model failed to load. Check logs for details."
+        gr.Markdown(f"**Model Status:** {model_status}")
         
         # Main interface
         with gr.Row():
@@ -480,9 +494,14 @@ def create_interface() -> gr.Blocks:
     return interface
 
 
-# Initialize model manager
+# Initialize model manager with error handling
 logger.info("Initializing application...")
-model_manager = ModelManager()
+try:
+    model_manager = ModelManager()
+except Exception as e:
+    logger.error(f"Failed to initialize model manager: {str(e)}", exc_info=True)
+    # Create a dummy model manager that will show error in UI
+    model_manager = None
 
 # Create interface
 demo = create_interface()
