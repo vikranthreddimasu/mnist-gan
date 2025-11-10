@@ -5,8 +5,8 @@ torchvision==0.15.2
 # Web Interface - Align with Space metadata (fixes HF runtime crash)
 gradio==4.44.0
 
-# Hugging Face Hub - allow newer versions bundled with Gradio
-huggingface_hub>=0.24.0
+# Hugging Face Hub - pin to version exposing HfFolder (required by Gradio 4.44)
+huggingface_hub==0.19.4
 
 # Numerical Computing
 numpy==1.24.3
