@@ -563,7 +563,7 @@ def create_interface() -> gr.Blocks:
             with gr.Tab("Playground"):
                 with gr.Row(equal_height=True):
                     with gr.Column(scale=1, elem_classes="surface"):
-                gr.Markdown("### Controls")
+                        gr.Markdown("### Controls")
                 
                         num_images = gr.Slider(
                             minimum=MIN_IMAGES,
