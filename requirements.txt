@@ -2,8 +2,8 @@
 torch==2.0.1
 torchvision==0.15.2
 
-# Web Interface
-gradio==5.0.0
+# Web Interface - Using latest stable version
+gradio==5.7.1
 
 # Numerical Computing
 numpy==1.24.3
@@ -13,6 +13,3 @@ matplotlib==3.7.2
 
 # Image Processing
 Pillow==10.0.0
-
-# Hugging Face Hub (compatibility)
-huggingface_hub>=0.20.0
