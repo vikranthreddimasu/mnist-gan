@@ -21,11 +21,6 @@ matplotlib.use('Agg')  # Non-interactive backend for server deployment
 import matplotlib.pyplot as plt
 from PIL import Image
 import io
-try:
-    from gradio_client import utils as gradio_client_utils
-except ImportError:
-    gradio_client_utils = None
-
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -33,28 +28,6 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger(__name__)
-
-# Patch gradio_client schema helpers to handle boolean schemas (older versions crash)
-if gradio_client_utils is not None:
-    try:
-        _original_get_type = gradio_client_utils.get_type
-        _original_schema_converter = gradio_client_utils._json_schema_to_python_type  # noqa: SLF001
-
-        def _safe_get_type(schema):
-            if isinstance(schema, bool):
-                return "bool" if schema else "none"
-            return _original_get_type(schema)
-
-        def _safe_schema_converter(schema, defs=None):
-            if isinstance(schema, bool):
-                return "Any" if schema else "None"
-            return _original_schema_converter(schema, defs)
-
-        gradio_client_utils.get_type = _safe_get_type
-        gradio_client_utils._json_schema_to_python_type = _safe_schema_converter  # noqa: SLF001
-        logger.info("Patched gradio_client utils to handle boolean JSON schemas")
-    except Exception as patch_error:
-        logger.warning("Could not patch gradio_client schema helpers: %s", patch_error)
 
 # Constants
 NOISE_DIM = 100
@@ -723,7 +696,7 @@ def create_interface() -> gr.Blocks:
                 """
                 - **Generator:** Fully-connected GAN with 1.49M parameters (100-dim noise → 28×28 image).
                 - **Training:** MNIST, 200 epochs, Adam (lr=2e-4), final generator loss ≈ 0.97.
-                - **Deployment:** PyTorch 2.0.1 + Gradio 4.44 running on CPU in Hugging Face Spaces.
+                - **Deployment:** PyTorch + Gradio running on CPU in Hugging Face Spaces.
                 """
             )
         
@@ -746,12 +719,8 @@ def create_interface() -> gr.Blocks:
         )
         
         interface.load(
-            fn=generate_digits,
-            inputs=[
-                gr.Number(value=9, visible=False),
-                gr.Number(value=DEFAULT_SEED, visible=False),
-                gr.Number(value=1.0, visible=False)
-            ],
+            fn=lambda: generate_digits(9, DEFAULT_SEED, 1.0),
+            inputs=None,
             outputs=output_image
         )
     
